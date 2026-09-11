@@ -22,6 +22,46 @@ CREATE TABLE IF NOT EXISTS alerts (
     PRIMARY KEY (pair, bar_ts)
 );
 CREATE INDEX IF NOT EXISTS alerts_created_at_idx ON alerts (created_at);
+
+-- Full detail of every hit, so the dashboard can render what was found.
+-- The alerts table stays the dedupe ledger; this one is the record.
+CREATE TABLE IF NOT EXISTS hits (
+    pair             TEXT    NOT NULL,
+    base             TEXT,
+    bar_ts           INTEGER NOT NULL,
+    interval_seconds INTEGER NOT NULL,
+    timeframe        TEXT,
+    close            REAL,
+    ema              REAL,
+    ema_len          INTEGER,
+    macd             REAL,
+    signal           REAL,
+    market_cap       REAL,
+    quote_volume_24h REAL,
+    alerted          INTEGER NOT NULL DEFAULT 0,
+    created_at       INTEGER NOT NULL,
+    PRIMARY KEY (pair, bar_ts)
+);
+CREATE INDEX IF NOT EXISTS hits_bar_ts_idx ON hits (bar_ts DESC);
+
+-- One row per completed scan, for the dashboard's status and funnel.
+CREATE TABLE IF NOT EXISTS scans (
+    bar_ts             INTEGER PRIMARY KEY,
+    finished_at        INTEGER NOT NULL,
+    duration           REAL,
+    universe_total     INTEGER,
+    after_quote        INTEGER,
+    after_status       INTEGER,
+    after_leveraged    INTEGER,
+    after_volume       INTEGER,
+    after_mcap         INTEGER,
+    scanned            INTEGER,
+    hits               INTEGER,
+    alerted            INTEGER,
+    skipped_duplicate  INTEGER,
+    errors             INTEGER
+);
+CREATE INDEX IF NOT EXISTS scans_finished_at_idx ON scans (finished_at DESC);
 """
 
 
@@ -89,12 +129,115 @@ class AlertStore:
             ).fetchone()
         return row is not None
 
+    # ------------------------------------------------------------- dashboard
+    def record_hit(self, hit: object, alerted: bool) -> None:
+        """Store the full detail of a hit (idempotent per pair+bar)."""
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO hits (pair, base, bar_ts, interval_seconds, timeframe,
+                                  close, ema, ema_len, macd, signal, market_cap,
+                                  quote_volume_24h, alerted, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(pair, bar_ts) DO UPDATE SET
+                    alerted = MAX(hits.alerted, excluded.alerted)
+                """,
+                (
+                    hit.pair,
+                    hit.base,
+                    int(hit.bar_ts),
+                    int(hit.interval_seconds),
+                    hit.timeframe,
+                    float(hit.close),
+                    float(hit.ema),
+                    int(hit.ema_len),
+                    float(hit.macd),
+                    float(hit.signal),
+                    float(hit.market_cap),
+                    float(hit.quote_volume_24h),
+                    1 if alerted else 0,
+                    int(time.time()),
+                ),
+            )
+            self._conn.commit()
+
+    def record_scan(self, result: object) -> None:
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO scans
+                    (bar_ts, finished_at, duration, universe_total, after_quote,
+                     after_status, after_leveraged, after_volume, after_mcap,
+                     scanned, hits, alerted, skipped_duplicate, errors)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(result.bar_ts),
+                    int(time.time()),
+                    round(float(result.duration), 2),
+                    result.universe_total,
+                    result.after_quote_filter,
+                    result.after_status_filter,
+                    result.after_leveraged_filter,
+                    result.after_volume_filter,
+                    result.after_mcap_filter,
+                    result.scanned,
+                    len(result.hits),
+                    len(result.alerted),
+                    result.skipped_duplicate,
+                    result.errors,
+                ),
+            )
+            self._conn.commit()
+
+    def recent_hits(self, limit: int = 100) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT pair, base, bar_ts, interval_seconds, timeframe, close, ema,
+                       ema_len, macd, signal, market_cap, quote_volume_24h, alerted
+                FROM hits ORDER BY bar_ts DESC, quote_volume_24h DESC LIMIT ?
+                """,
+                (int(limit),),
+            ).fetchall()
+        keys = ("pair", "base", "bar_ts", "interval_seconds", "timeframe", "close",
+                "ema", "ema_len", "macd", "signal", "market_cap", "quote_volume_24h",
+                "alerted")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def recent_scans(self, limit: int = 20) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT bar_ts, finished_at, duration, universe_total, after_quote,
+                       after_status, after_leveraged, after_volume, after_mcap,
+                       scanned, hits, alerted, skipped_duplicate, errors
+                FROM scans ORDER BY bar_ts DESC LIMIT ?
+                """,
+                (int(limit),),
+            ).fetchall()
+        keys = ("bar_ts", "finished_at", "duration", "universe_total", "after_quote",
+                "after_status", "after_leveraged", "after_volume", "after_mcap",
+                "scanned", "hits", "alerted", "skipped_duplicate", "errors")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def totals(self) -> dict:
+        with self._lock:
+            hits = self._conn.execute("SELECT COUNT(*) FROM hits").fetchone()[0]
+            alerted = self._conn.execute(
+                "SELECT COUNT(*) FROM hits WHERE alerted = 1"
+            ).fetchone()[0]
+            scans = self._conn.execute("SELECT COUNT(*) FROM scans").fetchone()[0]
+        return {"hits": int(hits), "alerted": int(alerted), "scans": int(scans)}
+
     def prune(self, retention_days: int) -> int:
         if retention_days <= 0:
             return 0
         cutoff = int(time.time()) - retention_days * 86400
         with self._lock:
             cursor = self._conn.execute("DELETE FROM alerts WHERE created_at < ?", (cutoff,))
+            self._conn.execute("DELETE FROM hits WHERE created_at < ?", (cutoff,))
+            self._conn.execute("DELETE FROM scans WHERE finished_at < ?", (cutoff,))
             self._conn.commit()
         removed = cursor.rowcount or 0
         if removed:

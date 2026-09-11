@@ -335,12 +335,21 @@ class Scanner:
                 continue
             if self.notifier.send(format_alert(hit)):
                 result.alerted.append(hit.pair)
+                self.store.record_hit(hit, alerted=True)
                 sent += 1
             else:
                 # Release the claim so the next scan can retry this alert.
                 self.store.release(hit.pair, hit.bar_ts)
                 result.errors += 1
                 log.error("Alert delivery failed for %s; claim released", hit.pair)
+
+        # Every hit is recorded, alerted or not, so the dashboard shows the
+        # full picture (duplicates, capped, and failed sends included).
+        alerted_pairs = set(result.alerted)
+        for hit in ordered:
+            if hit.pair not in alerted_pairs:
+                self.store.record_hit(hit, alerted=False)
+        self.store.record_scan(result)
 
         log.info(
             "Scan done in %.1fs | scanned=%d hits=%d alerted=%d dupes=%d errors=%d",

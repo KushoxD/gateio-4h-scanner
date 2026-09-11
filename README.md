@@ -46,9 +46,10 @@ app/
   indicators.py   EMA + MACD from closes, NumPy, no look-ahead
   mcap.py         market caps from Gate, with a CoinGecko fallback
   notify.py       Telegram delivery and message formatting
-  store.py        SQLite dedupe: one alert per (pair, bar timestamp)
+  store.py        SQLite: dedupe ledger + hit/scan history for the dashboard
+  dashboard.py    the dashboard page (self-contained HTML/CSS/JS)
   config.py       every env var, parsed and validated once at boot
-  health.py       optional /health endpoint (off by default)
+  health.py       HTTP server: dashboard, /api/state, /health
 tests/            unit tests + a full end-to-end test against a fake Gate API
 Dockerfile        worker image, non-root, no exposed port
 railway.toml      Railway build/deploy config
@@ -168,13 +169,25 @@ USER scanner
 …and confirm in the logs that the store reports `/data/scanner.db` rather than
 the `/tmp` fallback.
 
-### Optional: a health port
+### The dashboard
 
-Railway worker services need no port. If your setup requires one, set
-`ENABLE_HEALTH_SERVER=1` (it also turns on automatically when Railway injects
-`PORT`). A daemon thread then serves `GET /health` on `0.0.0.0:$PORT` returning
-JSON with uptime, scans completed, last bar scanned and last error. Scanning
-always stays on the main thread.
+When `PORT` is present (Railway injects it) or `ENABLE_HEALTH_SERVER=1`, a
+daemon thread serves a web dashboard on `0.0.0.0:$PORT`. Generate a Railway
+domain for the service to reach it.
+
+| Route | What it returns |
+|---|---|
+| `/` | Dashboard: every hit with close/EMA/MACD/signal/mcap/volume, whether it was sent, the filter funnel, and scan history |
+| `/api/state` | The same data as JSON |
+| `/health` | Liveness probe: uptime, scans completed, last bar, last error |
+
+The page is self-contained (no CDN, no build step), follows the viewer's
+light/dark preference, works at phone width, and refreshes every 30s. It reads
+from the same SQLite database on the volume, so history survives restarts.
+Scanning always stays on the main thread — the server only reads.
+
+Note the dashboard is **public** once a domain is generated. It exposes hits
+and scan statistics, never the bot token or chat id.
 
 ## Getting your Telegram chat id
 

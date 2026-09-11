@@ -99,8 +99,6 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_signal)
 
     state = HealthState()
-    if cfg.enable_health_server:
-        start_health_server(cfg.port, state)
 
     store = AlertStore(cfg.data_dir)
     store.prune(cfg.dedupe_retention_days)
@@ -112,6 +110,10 @@ def main() -> int:
         api_base=cfg.telegram_api_base,
     )
     scanner = build_scanner(cfg, store, notifier)
+
+    # Started after the store exists so the dashboard always has data to read.
+    if cfg.enable_health_server:
+        start_health_server(cfg.port, state, store=store, cfg=cfg, notifier=notifier)
 
     try:
         if cfg.run_once:
@@ -126,6 +128,7 @@ def main() -> int:
 
         while not _shutdown.is_set():
             delay = seconds_until_next_scan(cfg)
+            state.set_next_scan(time.time() + delay)
             wake_at = datetime.fromtimestamp(time.time() + delay, tz=timezone.utc)
             log.info(
                 "Heartbeat | next scan in %.0fs at %s | dedupe rows=%d",

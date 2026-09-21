@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from app.dashboard import PAGE
+from app.timefmt import offset_seconds, tz_label
 
 log = logging.getLogger(__name__)
 
@@ -71,8 +72,12 @@ def build_state(state: HealthState, store: Any, cfg: Any, notifier: Any) -> dict
     last = scans[0] if scans else {}
     interval_seconds = getattr(cfg, "interval_seconds", 14400)
 
+    tz = cfg.tzinfo
     payload.update(
         {
+            "tz_offset_seconds": offset_seconds(tz),
+            "tz_label": tz_label(tz),
+            "tz_name": cfg.display_tz,
             "telegram_enabled": bool(getattr(notifier, "enabled", False)),
             "hits": store.recent_hits(limit=60),
             "scans": scans,

@@ -46,6 +46,11 @@ class Hit:
             "%Y-%m-%d %H:%M UTC"
         )
 
+    def bar_close_local(self, tz) -> str:  # noqa: ANN001
+        from app.timefmt import fmt
+
+        return fmt(self.bar_close_ts, tz)
+
 
 @dataclass
 class ScanResult:
@@ -180,10 +185,13 @@ class Scanner:
         expected_bar = last_closed_bar_open(now, cfg.interval_seconds)
         result = ScanResult(bar_ts=expected_bar)
 
+        from app.timefmt import fmt as fmt_time
+
         log.info(
-            "Scan start | interval=%s | last closed bar %s",
+            "Scan start | interval=%s | last closed bar %s (closes %s)",
             cfg.interval,
             datetime.fromtimestamp(expected_bar, tz=timezone.utc).isoformat(),
+            fmt_time(expected_bar + cfg.interval_seconds, cfg.tzinfo),
         )
 
         candidates = self.build_universe(result)
@@ -333,7 +341,7 @@ class Scanner:
                 result.skipped_duplicate += 1
                 log.info("Skipping %s @ %s - already alerted", hit.pair, hit.bar_ts)
                 continue
-            if self.notifier.send(format_alert(hit)):
+            if self.notifier.send(format_alert(hit, self.cfg.tzinfo)):
                 result.alerted.append(hit.pair)
                 self.store.record_hit(hit, alerted=True)
                 sent += 1

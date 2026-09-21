@@ -13,7 +13,7 @@ from app.scanner import (
 )
 
 FOUR_HOURS = 14400
-# 2026-09-11 12:00:00 UTC, exactly on a 4H boundary.
+# 2026-09-10 12:00:00 UTC, exactly on a 4H boundary.
 BOUNDARY = 1789041600
 
 

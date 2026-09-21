@@ -50,6 +50,7 @@ app/
   dashboard.py    the dashboard page (self-contained HTML/CSS/JS)
   config.py       every env var, parsed and validated once at boot
   health.py       HTTP server: dashboard, /api/state, /health
+  timefmt.py      DISPLAY_TZ handling for messages, page and logs
 tests/            unit tests + a full end-to-end test against a fake Gate API
 Dockerfile        worker image, non-root, no exposed port
 railway.toml      Railway build/deploy config
@@ -88,6 +89,32 @@ the pattern with a minimum prefix length instead:
 ```
 LEVERAGED_REGEX=.+(?:3|4|5)(?:L|S)$|.{3,}(?:BULL|BEAR|UP|DOWN)$
 ```
+
+## Timezones
+
+Every time a human reads — the Telegram message, the dashboard, the logs — is
+rendered in `DISPLAY_TZ`, which defaults to `Asia/Kuala_Lumpur` (**GMT+8**).
+
+This is **display only**. Scanning is always anchored to Gate.io's UTC candle
+boundaries, because that is how the exchange closes its bars. Since GMT+8 is a
+whole-hour offset, the same six closes simply read as clean local hours:
+
+| UTC | GMT+8 |
+|---|---|
+| 00:00 | 08:00 |
+| 04:00 | 12:00 |
+| 08:00 | 16:00 |
+| 12:00 | 20:00 |
+| 16:00 | 00:00 (next day) |
+| 20:00 | 04:00 (next day) |
+
+Set `DISPLAY_TZ=UTC` to go back to UTC, or any IANA name (`America/New_York`,
+`Europe/London`). Zones with DST and half-hour offsets are handled — the offset
+is resolved at the instant being displayed, not at process start. An unknown
+name logs a warning and falls back to UTC rather than crashing.
+
+`requirements.txt` includes `tzdata` so zone lookups work in the slim image,
+which does not ship a system timezone database.
 
 ## Scheduling
 
@@ -248,6 +275,7 @@ comment. The ones you are most likely to touch:
 | `REQUEST_INTERVAL` | `0.06` | Minimum seconds between Gate requests |
 | `MAX_ALERTS_PER_SCAN` | `40` | Guard against an alert storm |
 | `DRY_RUN` | `0` | Compute and log alerts without sending |
+| `DISPLAY_TZ` | `Asia/Kuala_Lumpur` | Timezone for displayed times (GMT+8); does not move the schedule |
 
 ## Notes and limits
 

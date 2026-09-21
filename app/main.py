@@ -12,7 +12,6 @@ import signal
 import sys
 import threading
 import time
-from datetime import datetime, timezone
 
 from app.config import Config, load_config
 from app.gate import GateClient
@@ -20,20 +19,22 @@ from app.health import HealthState, start_health_server
 from app.notify import TelegramNotifier
 from app.scanner import Scanner, next_close_time
 from app.store import AlertStore
+from app.timefmt import ZonedFormatter, fmt as fmt_time, tz_label
 
 log = logging.getLogger("app.main")
 
 _shutdown = threading.Event()
 
 
-def configure_logging(level: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, level, logging.INFO),
-        format="%(asctime)s %(levelname)-7s %(name)s | %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S%z",
-        stream=sys.stdout,
-        force=True,
+def configure_logging(level: str, tz=None) -> None:  # noqa: ANN001
+    handler = logging.StreamHandler(stream=sys.stdout)
+    fmt_str = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
+    handler.setFormatter(
+        ZonedFormatter(fmt_str, tz) if tz is not None else logging.Formatter(fmt_str)
     )
+    root = logging.getLogger()
+    root.handlers[:] = [handler]
+    root.setLevel(getattr(logging, level, logging.INFO))
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
@@ -79,11 +80,12 @@ def run_scan(scanner: Scanner, state: HealthState) -> bool:
 
 def main() -> int:
     cfg = load_config()
-    configure_logging(cfg.log_level)
+    tz = cfg.tzinfo
+    configure_logging(cfg.log_level, tz)
 
     log.info(
         "Gate.io %s scanner starting | quote=%s min_mcap=%s min_vol=%s "
-        "macd=%d/%d/%d ema=%d run_once=%s",
+        "macd=%d/%d/%d ema=%d run_once=%s | times shown in %s (%s)",
         cfg.interval,
         cfg.quote,
         f"{cfg.min_mcap:,.0f}",
@@ -93,6 +95,8 @@ def main() -> int:
         cfg.macd_signal,
         cfg.ema_len,
         cfg.run_once,
+        cfg.display_tz,
+        tz_label(tz),
     )
 
     signal.signal(signal.SIGTERM, _handle_signal)
@@ -129,11 +133,10 @@ def main() -> int:
         while not _shutdown.is_set():
             delay = seconds_until_next_scan(cfg)
             state.set_next_scan(time.time() + delay)
-            wake_at = datetime.fromtimestamp(time.time() + delay, tz=timezone.utc)
             log.info(
                 "Heartbeat | next scan in %.0fs at %s | dedupe rows=%d",
                 delay,
-                wake_at.isoformat(timespec="seconds"),
+                fmt_time(time.time() + delay, tz, "%Y-%m-%d %H:%M:%S"),
                 store.count(),
             )
             # Wait in one interruptible block so SIGTERM is honoured promptly.

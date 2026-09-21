@@ -129,6 +129,10 @@ class Config:
     scan_buffer_seconds: int = field(default_factory=lambda: _int("SCAN_BUFFER_SECONDS", 90))
     strict_bar_ts: bool = field(default_factory=lambda: _bool("STRICT_BAR_TS", True))
     log_level: str = field(default_factory=lambda: _str("LOG_LEVEL", "INFO").upper())
+    # Display only: the scan schedule stays anchored to UTC candle boundaries.
+    display_tz: str = field(
+        default_factory=lambda: _str("DISPLAY_TZ", "Asia/Kuala_Lumpur")
+    )
     enable_health_server: bool = field(
         default_factory=lambda: _bool("ENABLE_HEALTH_SERVER", bool(os.environ.get("PORT")))
     )
@@ -168,6 +172,12 @@ class Config:
     @property
     def timeframe_label(self) -> str:
         return self.interval.upper()
+
+    @property
+    def tzinfo(self):  # noqa: ANN201 - timezone | ZoneInfo
+        from app.timefmt import get_zone
+
+        return get_zone(self.display_tz)
 
 
 def load_config() -> Config:

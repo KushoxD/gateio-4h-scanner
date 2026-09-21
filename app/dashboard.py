@@ -126,7 +126,7 @@ PAGE = """<!doctype html>
   <h2>Scan history</h2>
   <div class="scroll"><table>
     <thead><tr>
-      <th>Bar close (UTC)</th><th>Scanned</th><th>Hits</th><th>Sent</th>
+      <th id="th-close">Bar close</th><th>Scanned</th><th>Hits</th><th>Sent</th>
       <th>Dupes</th><th>Errors</th><th>Took</th>
     </tr></thead>
     <tbody id="scans"></tbody>
@@ -158,7 +158,15 @@ const fmtInd = v => {
   if (m >= 1e-4) return v.toFixed(8);
   return v.toExponential(3);
 };
-const utc = ts => ts ? new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ") : "—";
+let tzOffset = 0, tzLabel = "UTC";
+// Shift by the server's offset, then read the UTC fields back out, so the
+// page shows the scanner's timezone rather than the viewer's.
+const when = (ts, withLabel = true) => {
+  if (!ts) return "—";
+  const d = new Date((ts + tzOffset) * 1000);
+  const s = d.toISOString().slice(0, 16).replace("T", " ");
+  return withLabel ? `${s} ${tzLabel}` : s;
+};
 const ago = ts => {
   if (!ts) return "never";
   const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
@@ -181,12 +189,15 @@ let state = null;
 function render() {
   if (!state) return;
   const s = state;
+  tzOffset = s.tz_offset_seconds || 0;
+  tzLabel = s.tz_label || "UTC";
 
   document.getElementById("status").innerHTML =
     `<span class="dot${s.last_error ? " warn" : ""}"></span>` +
     `${s.scans_completed} scan${s.scans_completed === 1 ? "" : "s"} · ` +
     `last ${ago(s.last_scan_at)} · next in ${until(s.next_scan_at)}`;
-  document.getElementById("clock").textContent = utc(Date.now() / 1000) + " UTC";
+  document.getElementById("clock").textContent =
+    when(Date.now() / 1000) + " \u00b7 " + (s.tz_name || "");
 
   const warn = [];
   if (!s.telegram_enabled)
@@ -201,7 +212,7 @@ function render() {
     ["Alerts total", s.totals.alerted],
     ["Hits recorded", s.totals.hits],
     ["Pairs scanned", last.scanned ?? "—"],
-    ["Last bar close", `<span class="v sm">${utc(s.last_bar_close_ts)} UTC</span>`, true],
+    ["Last bar close", `<span class="v sm">${when(s.last_bar_close_ts)}</span>`, true],
     ["Next scan", `<span class="v sm">${until(s.next_scan_at)}</span>`, true],
   ].map(([k, v, raw]) =>
     `<div class="card"><div class="k">${k}</div>` +
@@ -227,7 +238,7 @@ function render() {
           <dt>24h vol</dt><dd>${fmtUsd(h.quote_volume_24h)}</dd>
         </dl>
         <div class="barts"><span>${esc(h.timeframe || "4H")} bar close</span>
-          <span>${utc(closeTs)} UTC</span></div>
+          <span>${when(closeTs)}</span></div>
       </div>`;
     }).join("") + `</div>`
   ) : `<div class="empty"><b>No alerts yet</b>
@@ -246,7 +257,7 @@ function render() {
     : '<div class="step"><i>waiting for the first scan</i></div>';
 
   document.getElementById("scans").innerHTML = (s.scans || []).map(r => `
-    <tr><td>${utc(r.bar_ts + (last.interval_seconds || 14400))}</td>
+    <tr><td>${when(r.bar_ts + (last.interval_seconds || 14400), false)}</td>
     <td>${r.scanned}</td><td>${r.hits}</td><td>${r.alerted}</td>
     <td>${r.skipped_duplicate}</td><td>${r.errors}</td>
     <td>${r.duration != null ? r.duration.toFixed(1) + "s" : "—"}</td></tr>`).join("")

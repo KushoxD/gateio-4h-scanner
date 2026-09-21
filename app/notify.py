@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import logging
 import time
+from datetime import timezone
 from typing import Any
 
 import requests
@@ -137,8 +138,16 @@ def _fmt_usd(value: float) -> str:
     return f"${value:,.0f}"
 
 
-def format_alert(hit: Any) -> str:
-    """Render a :class:`app.scanner.Hit` as a Telegram HTML message."""
+def format_alert(hit: Any, tz: Any = None) -> str:
+    """Render a :class:`app.scanner.Hit` as a Telegram HTML message.
+
+    ``tz`` controls only how the bar-close time is written; the bar itself is
+    always the UTC-aligned candle Gate closed.
+    """
+    from app.timefmt import fmt as fmt_time
+
+    if tz is None:
+        tz = timezone.utc
     pair = html.escape(hit.pair)
     url = f"https://www.gate.io/trade/{hit.pair}"
     mcap = _fmt_usd(hit.market_cap) if hit.market_cap > 0 else "n/a"
@@ -149,7 +158,7 @@ def format_alert(hit: Any) -> str:
             f"🚀 <b>MACD golden cross above zero</b> — <b>{pair}</b>",
             "",
             f"Exchange: <b>Gate</b>   Timeframe: <b>{html.escape(hit.timeframe)}</b>",
-            f"Bar close (UTC): <code>{html.escape(hit.bar_close_utc)}</code>",
+            f"Bar close: <code>{html.escape(fmt_time(hit.bar_close_ts, tz))}</code>",
             "",
             f"Close: <code>{_fmt_price(hit.close)}</code>",
             f"EMA{hit.ema_len}: <code>{_fmt_price(hit.ema)}</code>",

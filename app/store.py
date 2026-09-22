@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS hits (
     PRIMARY KEY (pair, bar_ts)
 );
 CREATE INDEX IF NOT EXISTS hits_bar_ts_idx ON hits (bar_ts DESC);
+CREATE INDEX IF NOT EXISTS hits_created_at_idx ON hits (created_at);
 
 -- One row per completed scan, for the dashboard's status and funnel.
 CREATE TABLE IF NOT EXISTS scans (

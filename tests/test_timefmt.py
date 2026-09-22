@@ -75,3 +75,4 @@ def test_config_default_is_gmt8(monkeypatch):
     cfg = Config()
     assert cfg.display_tz == "Asia/Kuala_Lumpur"
     assert offset_seconds(cfg.tzinfo, BOUNDARY) == 8 * 3600
+

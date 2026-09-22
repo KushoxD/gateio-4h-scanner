@@ -135,7 +135,18 @@ attach a Railway Cron job (`0 */4 * * *`) or any external scheduler.
 `(pair, bar_ts)` is claimed in SQLite with `INSERT OR IGNORE` before the
 message is sent, so the same pair can never be alerted twice for the same
 candle even if two scans overlap. If delivery fails the claim is **released**
-so the next scan retries it. Rows older than `DEDUPE_RETENTION_DAYS` are pruned.
+so the next scan retries it.
+
+### Retention
+
+Everything stored — the dedupe ledger, the hit detail behind the dashboard, and
+the scan history — is kept for `RETENTION_DAYS`, which defaults to **3**.
+Pruning runs at startup and after every scan, so the database stays roughly
+18 bars deep and does not grow without bound. Set `RETENTION_DAYS=0` to keep
+everything forever.
+
+Three days is far more than dedupe needs (a 4H bar stops being relevant after
+four hours); it exists so the dashboard has recent history to show.
 
 The database lives at `$DATA_DIR/scanner.db`. If `DATA_DIR` is not writable
 (no volume attached), the scanner logs a warning and falls back to
@@ -275,6 +286,7 @@ comment. The ones you are most likely to touch:
 | `REQUEST_INTERVAL` | `0.06` | Minimum seconds between Gate requests |
 | `MAX_ALERTS_PER_SCAN` | `40` | Guard against an alert storm |
 | `DRY_RUN` | `0` | Compute and log alerts without sending |
+| `RETENTION_DAYS` | `3` | Days of results to keep; `0` keeps everything |
 | `DISPLAY_TZ` | `Asia/Kuala_Lumpur` | Timezone for displayed times (GMT+8); does not move the schedule |
 
 ## Notes and limits

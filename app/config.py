@@ -121,8 +121,12 @@ class Config:
 
     # --- storage / runtime -----------------------------------------------
     data_dir: str = field(default_factory=lambda: _str("DATA_DIR", "/data"))
-    dedupe_retention_days: int = field(
-        default_factory=lambda: _int("DEDUPE_RETENTION_DAYS", 30)
+    # Covers everything stored: the dedupe ledger, hit detail and scan history.
+    # DEDUPE_RETENTION_DAYS is the old name, still honoured.
+    retention_days: int = field(
+        default_factory=lambda: _int(
+            "RETENTION_DAYS", _int("DEDUPE_RETENTION_DAYS", 3)
+        )
     )
     run_once: bool = field(default_factory=lambda: _bool("RUN_ONCE", False))
     scan_on_start: bool = field(default_factory=lambda: _bool("SCAN_ON_START", True))

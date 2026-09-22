@@ -105,7 +105,7 @@ def main() -> int:
     state = HealthState()
 
     store = AlertStore(cfg.data_dir)
-    store.prune(cfg.dedupe_retention_days)
+    store.prune(cfg.retention_days)
     notifier = TelegramNotifier(
         cfg.telegram_bot_token,
         cfg.telegram_chat_id,
@@ -143,7 +143,7 @@ def main() -> int:
             if _shutdown.wait(delay):
                 break
             run_scan(scanner, state)
-            store.prune(cfg.dedupe_retention_days)
+            store.prune(cfg.retention_days)
     finally:
         notifier.close()
         store.close()

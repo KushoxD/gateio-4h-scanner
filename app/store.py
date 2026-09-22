@@ -236,13 +236,25 @@ class AlertStore:
             return 0
         cutoff = int(time.time()) - retention_days * 86400
         with self._lock:
-            cursor = self._conn.execute("DELETE FROM alerts WHERE created_at < ?", (cutoff,))
-            self._conn.execute("DELETE FROM hits WHERE created_at < ?", (cutoff,))
-            self._conn.execute("DELETE FROM scans WHERE finished_at < ?", (cutoff,))
+            counts = {
+                table: self._conn.execute(sql, (cutoff,)).rowcount or 0
+                for table, sql in (
+                    ("alerts", "DELETE FROM alerts WHERE created_at < ?"),
+                    ("hits", "DELETE FROM hits WHERE created_at < ?"),
+                    ("scans", "DELETE FROM scans WHERE finished_at < ?"),
+                )
+            }
             self._conn.commit()
-        removed = cursor.rowcount or 0
+
+        removed = sum(counts.values())
         if removed:
-            log.info("Pruned %d dedupe rows older than %d days", removed, retention_days)
+            log.info(
+                "Pruned rows older than %d days: %d dedupe, %d hits, %d scans",
+                retention_days,
+                counts["alerts"],
+                counts["hits"],
+                counts["scans"],
+            )
         return removed
 
     def count(self) -> int:

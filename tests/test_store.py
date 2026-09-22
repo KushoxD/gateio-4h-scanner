@@ -35,6 +35,7 @@ def test_prune_drops_old_rows_only(tmp_path):
         store.claim("NEW_USDT", 2)
         store._conn.execute("UPDATE alerts SET created_at = 0 WHERE pair = 'OLD_USDT'")
         store._conn.commit()
+        # One alerts row, no hits or scans recorded in this test.
         assert store.prune(retention_days=3) == 1
         assert store.count() == 1
         assert store.was_alerted("NEW_USDT", 2) is True
@@ -77,7 +78,8 @@ def test_prune_clears_hits_and_scans_too(tmp_path):
         store._conn.commit()
 
         assert store.totals() == {"hits": 2, "alerted": 2, "scans": 2}
-        store.prune(retention_days=3)
+        # One row from each of alerts, hits and scans.
+        assert store.prune(retention_days=3) == 3
 
         assert store.totals() == {"hits": 1, "alerted": 1, "scans": 1}
         assert [h["pair"] for h in store.recent_hits()] == ["NEW_USDT"]
